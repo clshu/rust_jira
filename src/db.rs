@@ -1,10 +1,12 @@
+#![allow(dead_code)]
+
 use anyhow::{anyhow, Result};
 use std::fs;
 
 use crate::models::{DBState, Epic, Status, Story};
 
 pub struct JiraDatabase {
-    database: Box<dyn Database>,
+    pub database: Box<dyn Database>,
 }
 
 impl JiraDatabase {
@@ -88,12 +90,12 @@ impl JiraDatabase {
     }
 }
 
-trait Database {
+pub trait Database {
     fn read_db(&self) -> Result<DBState>;
     fn write_db(&self, db_state: &DBState) -> Result<()>;
 }
 
-struct JSONFileDatabase {
+pub struct JSONFileDatabase {
     pub file_path: String,
 }
 
@@ -108,6 +110,41 @@ impl Database for JSONFileDatabase {
         let json_data = serde_json::to_string(db_state)?;
         fs::write(&self.file_path, json_data)?;
         Ok(())
+    }
+}
+
+pub mod test_utils {
+    use std::{cell::RefCell, collections::HashMap};
+
+    use super::*;
+
+    pub struct MockDB {
+        last_written_state: RefCell<DBState>,
+    }
+
+    impl MockDB {
+        pub fn new() -> Self {
+            Self {
+                last_written_state: RefCell::new(DBState {
+                    last_item_id: 0,
+                    epics: HashMap::new(),
+                    stories: HashMap::new(),
+                }),
+            }
+        }
+    }
+
+    impl Database for MockDB {
+        fn read_db(&self) -> Result<DBState> {
+            let state = self.last_written_state.borrow().clone();
+            Ok(state)
+        }
+
+        fn write_db(&self, db_state: &DBState) -> Result<()> {
+            let latest_state = &self.last_written_state;
+            *latest_state.borrow_mut() = db_state.clone();
+            Ok(())
+        }
     }
 }
 
@@ -126,7 +163,7 @@ mod tests {
             let db = JSONFileDatabase {
                 file_path: "INVALID_PATH".to_owned(),
             };
-            assert_eq!(db.read_db().is_err(), true);
+            debug_assert_eq!(db.read_db().is_err(), true);
         }
 
         #[test]
